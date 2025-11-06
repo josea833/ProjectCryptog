@@ -1,11 +1,9 @@
-a5_des: a5_des.o
-	g++ -o a5_des a5_des.o
+CBC2: CBC2.cpp
+	g++ -o CBC2 CBC2.cpp -lcrypto
 
-a5_des.o: a5_des.cpp
-	g++ -c a5_des.cpp
 
-run:
-	./a5_des
+run: CBC2
+	./CBC2
 
 clean:
 	rm -rf *.o
