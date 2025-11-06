@@ -7,4 +7,5 @@ run: CBC2
 
 clean:
 	rm -rf *.o
+	rm -rf CBC2
 	
