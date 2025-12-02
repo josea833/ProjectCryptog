@@ -59,6 +59,7 @@ static void hex_print(const void *pv, size_t len) {
 
 string aes_CTRCipher(string key, string message) {
     cout << "Using AES CTR Mode" << endl;
+    //get key and message lengths
     size_t key_len_bytes = key.length();
     if (key_len_bytes != 16 && key_len_bytes != 24 && key_len_bytes != 32) {
         cerr << "Error: Invalid key length. Must be 16, 24, or 32 bytes, but got " << key_len_bytes << endl;
@@ -66,6 +67,7 @@ string aes_CTRCipher(string key, string message) {
     }
 
     size_t inputlength = message.length();
+    // Prepare key and input buffers
     vector<unsigned char> aes_key(key.begin(), key.end());
     unsigned char *aes_input = new unsigned char[inputlength];
     memcpy(aes_input, message.data(), inputlength);
@@ -95,6 +97,7 @@ string aes_CTRCipher(string key, string message) {
     size_t offset = 0;
     unsigned long long blockCounter = 0; // 64-bit counter portion
     
+    //begin clock
     auto start_encrypt = chrono::high_resolution_clock::now();
     while (offset < inputlength) {
         // Prepare counter block: IV (first 8 bytes) + counter (last 8 bytes big-endian)
@@ -102,14 +105,20 @@ string aes_CTRCipher(string key, string message) {
         for (int i = 0; i < 8; ++i) {
             counter[15 - i] = (unsigned char)((blockCounter >> (8 * i)) & 0xFF);
         }
+        //encrypt counter to get keystream block
         AES_encrypt(counter, keystream, &ctr_key);
         size_t blockSize = std::min((size_t)AES_BLOCK_SIZE, inputlength - offset);
+        // XOR input block with keystream block, aes_input contains the plaintext or message
         for (size_t i = 0; i < blockSize; ++i) {
+            //enc_out is ciphertext
             enc_out[offset + i] = aes_input[offset + i] ^ keystream[i];
         }
+        //number of blocks incremented
         blockCounter++;
+        //offset incremented by blocksize
         offset += blockSize;
     }
+    //end clock
     auto end_encrypt = chrono::high_resolution_clock::now();
     chrono::duration<double, micro> encrypt_time = end_encrypt - start_encrypt;
 
@@ -118,22 +127,31 @@ string aes_CTRCipher(string key, string message) {
     memcpy(counter, iv, AES_BLOCK_SIZE);
     blockCounter = 0;
     offset = 0;
+
+    //begin clock
     auto start_decrypt = chrono::high_resolution_clock::now();
     while (offset < inputlength) {
+        // Prepare counter block: IV (first 8 bytes) + counter (last 8 bytes big-endian)
+        // Here we keep first 8 bytes of IV constant, use last 8 bytes for counter.
         for (int i = 0; i < 8; ++i) {
             counter[15 - i] = (unsigned char)((blockCounter >> (8 * i)) & 0xFF);
         }
+        //encrypt counter to get keystream block, this is done for CTR implementation we always encrypt counter, not plaintext
         AES_encrypt(counter, keystream, &ctr_key);
         size_t blockSize = std::min((size_t)AES_BLOCK_SIZE, inputlength - offset);
+        // XOR ciphertext block with keystream block to get plaintext, enc_out contains the ciphertext
         for (size_t i = 0; i < blockSize; ++i) {
             dec_out[offset + i] = enc_out[offset + i] ^ keystream[i];
         }
+        //increment block counter by one and offset by blocksize
         blockCounter++;
         offset += blockSize;
     }
+    //end clock
     auto end_decrypt = chrono::high_resolution_clock::now();
     chrono::duration<double, micro> decrypt_time = end_decrypt - start_decrypt;
 
+    //print hex representations of original, encrypted, and decrypted data
     printf("Original:\t");
     hex_print(aes_input, inputlength);
     printf("Encrypt:\t");
@@ -141,9 +159,11 @@ string aes_CTRCipher(string key, string message) {
     printf("Decrypt:\t");
     hex_print(dec_out, inputlength);
 
+    //print encryption and decryption times
     cout << "Encryption time: " << encrypt_time.count() << " microseconds" << endl;
     cout << "Decryption time: " << decrypt_time.count() << " microseconds" << endl;
 
+    // Verify that decrypted output matches original input
     if (memcmp(aes_input, dec_out, inputlength) == 0) {
         printf("SUCCESS: Decryption matches original!\n");
     } else {
@@ -154,12 +174,14 @@ string aes_CTRCipher(string key, string message) {
         hex_print(dec_out, inputlength);
     }
 
+    // Convert encrypted output to hex string
     stringstream ss;
     ss << hex << setfill('0');
     for (size_t i = 0; i < inputlength; ++i) {
         ss << setw(2) << (int)enc_out[i];
     }
 
+    //delete memory
     delete[] aes_input;
     delete[] enc_out;
     delete[] dec_out;
