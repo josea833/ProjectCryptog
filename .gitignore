@@ -3,5 +3,6 @@
 .vscode/settings.json
 progAssign2/CTR
 progAssign2/CBC2
-progAssign2/.nfs00000000007e46d000000013
 progAssign2/CTR_HighLevel
+progAssign2/OFB_HighLevel
+progAssign2/OFB
