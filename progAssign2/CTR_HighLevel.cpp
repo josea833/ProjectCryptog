@@ -3,11 +3,12 @@
 #include <vector>
 #include <cstring>
 #include <sstream>
-#include <openssl/aes.h>
-#include <openssl/des.h>
+#include <openssl/evp.h>
 #include <iomanip>
 #include <chrono>
 #include <cstdlib>
+
+
 
 using namespace std;
 using namespace std::chrono;
@@ -15,9 +16,9 @@ using namespace std::chrono;
 #define AES_BLOCK_SIZE 16
 #define DES_BLOCK_SIZE 8
 
-string aes_CTRCipher(string key, string message);
-string des_CTRCipher(string key, string message);
-string des3_CTRCipher(string key, string message);
+string aes_CTRCipher_HighLevel(string key, string message);
+string des_CTRCipher_HighLevel(string key, string message);
+string des3_CTRCipher_HighLevel(string key, string message);
 static void hex_print(const void *pv, size_t len);
 
 int main(int argc, char *argv[]) {
@@ -34,11 +35,11 @@ int main(int argc, char *argv[]) {
     string plaintext_pattern = "The quick brown fox jumps over the lazy dog. ";
     
     cout << "========================================" << endl;
-    cout << "CTR MODE ENCRYPTION PERFORMANCE TESTING" << endl;
+    cout << "CTR MODE ENCRYPTION PERFORMANCE TESTING (HIGH-LEVEL API)" << endl;
     cout << "Testing: DES (64-bit), 3DES (64-bit), AES (128/192/256-bit)" << endl;
     cout << "========================================\n" << endl;
     
-    
+    /*
     // ==================== DES CTR MODE (64-bit key) ====================
     cout << "======== DES CTR MODE (64-bit key) ========" << endl;
     for (const auto &size : sizes) {
@@ -50,9 +51,10 @@ int main(int argc, char *argv[]) {
             remaining -= to_add;
         }
         cout << "\n--- Test Case: 64-bit key, " << size.first << " plaintext ---" << endl;
-        des_CTRCipher("01234567", plaintext);
+        des_CTRCipher_HighLevel("01234567", plaintext);
     }
     
+    /*
     // ==================== 3DES CTR MODE (64-bit key) ====================
     cout << "\n\n======== 3DES CTR MODE (0123456789abcdef01234567) ========" << endl;
     for (const auto &size : sizes) {
@@ -64,9 +66,9 @@ int main(int argc, char *argv[]) {
             remaining -= to_add;
         }
         cout << "\n--- Test Case: 3-key 3DES , " << size.first << " plaintext ---" << endl;
-        des3_CTRCipher("0123456789abcdef01234567", plaintext);
+        des3_CTRCipher_HighLevel("0123456789abcdef01234567", plaintext);
     }
-    
+    */
     // ==================== AES CTR MODE - 128-bit key ====================
     cout << "\n\n======== AES CTR MODE (128-bit key) ========" << endl;
     for (const auto &size : sizes) {
@@ -79,7 +81,7 @@ int main(int argc, char *argv[]) {
         }
         plaintext.resize(size.second); // Ensure exact size
         cout << "\n--- Test Case: 128-bit key, " << size.first << " plaintext ---" << endl;
-        aes_CTRCipher("0123456789abcdef", plaintext);
+        aes_CTRCipher_HighLevel("0123456789abcdef", plaintext);
     }
     
     // ==================== AES CTR MODE - 192-bit key ====================
@@ -94,7 +96,7 @@ int main(int argc, char *argv[]) {
         }
         plaintext.resize(size.second); // Ensure exact size
         cout << "\n--- Test Case: 192-bit key, " << size.first << " plaintext ---" << endl;
-        aes_CTRCipher("0123456789abcdef01234567", plaintext);
+        aes_CTRCipher_HighLevel("0123456789abcdef01234567", plaintext);
     }
     
     // ==================== AES CTR MODE - 256-bit key ====================
@@ -109,9 +111,9 @@ int main(int argc, char *argv[]) {
         }
         plaintext.resize(size.second); // Ensure exact size
         cout << "\n--- Test Case: 256-bit key, " << size.first << " plaintext ---" << endl;
-        aes_CTRCipher("0123456789abcdef0123456789abcdef", plaintext);
+        aes_CTRCipher_HighLevel("0123456789abcdef0123456789abcdef", plaintext);
     }
-        
+    
     
     return 0;
 }
@@ -144,9 +146,9 @@ static void hex_print(const void *pv, size_t len) {
     }
 }
 
-string aes_CTRCipher(string key, string message) {
-    cout << "Using AES CTR Mode" << endl;
-    //get key and message lengths
+string aes_CTRCipher_HighLevel(string key, string message) {
+    cout << "Using AES CTR Mode (High-Level EVP API)" << endl;
+    
     size_t key_len_bytes = key.length();
     if (key_len_bytes != 16 && key_len_bytes != 24 && key_len_bytes != 32) {
         cerr << "Error: Invalid key length. Must be 16, 24, or 32 bytes, but got " << key_len_bytes << endl;
@@ -154,125 +156,98 @@ string aes_CTRCipher(string key, string message) {
     }
 
     size_t inputlength = message.length();
-    // Prepare key and input buffers
-    vector<unsigned char> aes_key(key.begin(), key.end());
     unsigned char *aes_input = new unsigned char[inputlength];
     memcpy(aes_input, message.data(), inputlength);
 
     printf("Input length: %zu bytes\n", inputlength);
     printf("Key length: %zu bytes\n", key_len_bytes);
 
-    // For demonstration only: zero IV. In real applications use a random nonce/IV.
+    // Zero IV for demonstration
     unsigned char iv[AES_BLOCK_SIZE];
     memset(iv, 0x00, AES_BLOCK_SIZE);
 
     // Buffers for encryption/decryption
-    unsigned char *enc_out = new unsigned char[inputlength];
-    unsigned char *dec_out = new unsigned char[inputlength];
-    memset(enc_out, 0, inputlength);
-    memset(dec_out, 0, inputlength);
+    unsigned char *enc_out = new unsigned char[inputlength + AES_BLOCK_SIZE];
+    unsigned char *dec_out = new unsigned char[inputlength + AES_BLOCK_SIZE];
+    memset(enc_out, 0, inputlength + AES_BLOCK_SIZE);
+    memset(dec_out, 0, inputlength + AES_BLOCK_SIZE);
 
-    AES_KEY ctr_key;
-    AES_set_encrypt_key(aes_key.data(), key_len_bytes * 8, &ctr_key);
-
-    // Manual CTR implementation using AES_encrypt to produce keystream blocks.
-    // Counter starts at IV, increments by 1 per block (big-endian increment).
-    unsigned char counter[AES_BLOCK_SIZE];
-    memcpy(counter, iv, AES_BLOCK_SIZE);
-    unsigned char keystream[AES_BLOCK_SIZE];
-
-    size_t offset = 0;
-    unsigned long long blockCounter = 0; // 64-bit counter portion
-    
-    //begin clock
-    auto start_encrypt = high_resolution_clock::now();
-    while (offset < inputlength) {
-        // Prepare counter block: IV (first 8 bytes) + counter (last 8 bytes big-endian)
-        // Here we keep first 8 bytes of IV constant, use last 8 bytes for counter.
-        for (int i = 0; i < 8; ++i) {
-            counter[15 - i] = (unsigned char)((blockCounter >> (8 * i)) & 0xFF);
-        }
-        //encrypt counter to get keystream block
-        AES_encrypt(counter, keystream, &ctr_key);
-        size_t blockSize = std::min((size_t)AES_BLOCK_SIZE, inputlength - offset);
-        // XOR input block with keystream block, aes_input contains the plaintext or message
-        for (size_t i = 0; i < blockSize; ++i) {
-            //enc_out is ciphertext
-            enc_out[offset + i] = aes_input[offset + i] ^ keystream[i];
-        }
-        //number of blocks incremented
-        blockCounter++;
-        //offset incremented by blocksize
-        offset += blockSize;
+    // Select cipher based on key length
+    const EVP_CIPHER *cipher = nullptr;
+    if (key_len_bytes == 16) {
+        cipher = EVP_aes_128_ctr();
+    } else if (key_len_bytes == 24) {
+        cipher = EVP_aes_192_ctr();
+    } else if (key_len_bytes == 32) {
+        cipher = EVP_aes_256_ctr();
     }
-    //end clock
+
+    EVP_CIPHER_CTX *ctx_enc = EVP_CIPHER_CTX_new();
+    EVP_CIPHER_CTX *ctx_dec = EVP_CIPHER_CTX_new();
+    
+    int len;
+    int ciphertext_len = 0;
+    int plaintext_len = 0;
+
+    // Encryption
+    auto start_encrypt = high_resolution_clock::now();
+    
+    EVP_EncryptInit_ex(ctx_enc, cipher, NULL, (unsigned char*)key.data(), iv);
+    EVP_EncryptUpdate(ctx_enc, enc_out, &len, aes_input, inputlength);
+    ciphertext_len = len;
+    EVP_EncryptFinal_ex(ctx_enc, enc_out + len, &len);
+    ciphertext_len += len;
+    
     auto end_encrypt = high_resolution_clock::now();
     duration<double, micro> encrypt_time = end_encrypt - start_encrypt;
 
+    // Reset IV for decryption
+    memset(iv, 0x00, AES_BLOCK_SIZE);
 
-    // Decrypt (same operation): regenerate keystream and XOR.
-    memcpy(counter, iv, AES_BLOCK_SIZE);
-    blockCounter = 0;
-    offset = 0;
-
-    //begin clock
+    // Decryption
     auto start_decrypt = high_resolution_clock::now();
-    while (offset < inputlength) {
-        // Prepare counter block: IV (first 8 bytes) + counter (last 8 bytes big-endian)
-        // Here we keep first 8 bytes of IV constant, use last 8 bytes for counter.
-        for (int i = 0; i < 8; ++i) {
-            counter[15 - i] = (unsigned char)((blockCounter >> (8 * i)) & 0xFF);
-        }
-        //encrypt counter to get keystream block, this is done for CTR implementation we always encrypt counter, not plaintext
-        AES_encrypt(counter, keystream, &ctr_key);
-        size_t blockSize = std::min((size_t)AES_BLOCK_SIZE, inputlength - offset);
-        // XOR ciphertext block with keystream block to get plaintext, enc_out contains the ciphertext
-        for (size_t i = 0; i < blockSize; ++i) {
-            dec_out[offset + i] = enc_out[offset + i] ^ keystream[i];
-        }
-        //increment block counter by one and offset by blocksize
-        blockCounter++;
-        offset += blockSize;
-    }
-    //end clock
+    
+    EVP_DecryptInit_ex(ctx_dec, cipher, NULL, (unsigned char*)key.data(), iv);
+    EVP_DecryptUpdate(ctx_dec, dec_out, &len, enc_out, ciphertext_len);
+    plaintext_len = len;
+    EVP_DecryptFinal_ex(ctx_dec, dec_out + len, &len);
+    plaintext_len += len;
+    
     auto end_decrypt = high_resolution_clock::now();
     duration<double, micro> decrypt_time = end_decrypt - start_decrypt;
 
-    //print hex representations of original, encrypted, and decrypted data
+    // Print results
     printf("IV:\t");
     hex_print(iv, AES_BLOCK_SIZE);
     printf("Original:\t");
     hex_print(aes_input, inputlength);
     printf("Encrypt:\t");
-    hex_print(enc_out, inputlength);
+    hex_print(enc_out, ciphertext_len);
     printf("Decrypt:\t");
-    hex_print(dec_out, inputlength);
+    hex_print(dec_out, plaintext_len);
 
-    //print encryption and decryption times in seconds
     cout << "Encryption time: " << (encrypt_time.count() / 1e6) << " seconds" << endl;
     cout << "Decryption time: " << (decrypt_time.count() / 1e6) << " seconds" << endl;
     double total_time = encrypt_time.count() + decrypt_time.count();
     cout << "Total time: " << (total_time / 1e6) << " seconds" << endl;
 
-    // Verify that decrypted output matches original input
+    // Verify
     if (memcmp(aes_input, dec_out, inputlength) == 0) {
         printf("SUCCESS: Decryption matches original!\n");
     } else {
         printf("ERROR: Decryption failed!\n");
-        printf("Expected: ");
-        hex_print(aes_input, inputlength);
-        printf("Got: ");
-        hex_print(dec_out, inputlength);
     }
 
-    // Convert encrypted output to hex string
+    // Convert to hex string
     stringstream ss;
     ss << hex << setfill('0');
-    for (size_t i = 0; i < inputlength; ++i) {
+    for (int i = 0; i < ciphertext_len; ++i) {
         ss << setw(2) << (int)enc_out[i];
     }
 
-    //delete memory
+    // Cleanup
+    EVP_CIPHER_CTX_free(ctx_enc);
+    EVP_CIPHER_CTX_free(ctx_dec);
     delete[] aes_input;
     delete[] enc_out;
     delete[] dec_out;
@@ -280,8 +255,9 @@ string aes_CTRCipher(string key, string message) {
     return ss.str();
 }
 
-string des_CTRCipher(string key, string message) {
-    cout << "Using DES CTR Mode" << endl;
+string des_CTRCipher_HighLevel(string key, string message) {
+    cout << "Using DES CTR Mode (High-Level EVP API)" << endl;
+    
     size_t key_len_bytes = key.length();
     if (key_len_bytes != 8) {
         cerr << "Error: Invalid key length for DES. Must be 8 bytes, but got " << key_len_bytes << endl;
@@ -295,33 +271,42 @@ string des_CTRCipher(string key, string message) {
     printf("Input length: %zu bytes\n", inputlength);
     printf("Key length: %zu bytes\n", key_len_bytes);
 
-    // Setup DES key
-    DES_cblock des_key;
-    memcpy(des_key, key.data(), 8);
-    DES_key_schedule key_schedule;
-    DES_set_key_unchecked(&des_key, &key_schedule);
+    // Zero IV for demonstration
+    unsigned char iv[DES_BLOCK_SIZE];
+    memset(iv, 0x00, DES_BLOCK_SIZE);
 
-    // For demonstration: zero IV/counter
+    // Buffers for encryption/decryption
+    unsigned char *enc_out = new unsigned char[inputlength + DES_BLOCK_SIZE];
+    unsigned char *dec_out = new unsigned char[inputlength + DES_BLOCK_SIZE];
+    memset(enc_out, 0, inputlength + DES_BLOCK_SIZE);
+    memset(dec_out, 0, inputlength + DES_BLOCK_SIZE);
+
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    
+    int len;
+    int ciphertext_len = inputlength;
+
+    // Manual CTR implementation using EVP_des_ecb
+    EVP_EncryptInit_ex(ctx, EVP_des_ecb(), NULL, (unsigned char*)key.data(), NULL);
+    EVP_CIPHER_CTX_set_padding(ctx, 0);
+
     unsigned char counter[DES_BLOCK_SIZE];
     memset(counter, 0x00, DES_BLOCK_SIZE);
     unsigned char keystream[DES_BLOCK_SIZE];
-
-    // Buffers for encryption/decryption
-    unsigned char *enc_out = new unsigned char[inputlength];
-    unsigned char *dec_out = new unsigned char[inputlength];
-    memset(enc_out, 0, inputlength);
-    memset(dec_out, 0, inputlength);
-
-    size_t offset = 0;
     unsigned long long blockCounter = 0;
-    
+    size_t offset = 0;
+
+    // Encryption
     auto start_encrypt = high_resolution_clock::now();
+    
     while (offset < inputlength) {
-        // Prepare counter block (64-bit counter)
+        // Prepare counter
         for (int i = 0; i < 8; ++i) {
             counter[7 - i] = (unsigned char)((blockCounter >> (8 * i)) & 0xFF);
         }
-        DES_ecb_encrypt((DES_cblock *)counter, (DES_cblock *)keystream, &key_schedule, DES_ENCRYPT);
+        // Encrypt counter to get keystream
+        EVP_EncryptUpdate(ctx, keystream, &len, counter, DES_BLOCK_SIZE);
+        
         size_t blockSize = std::min((size_t)DES_BLOCK_SIZE, inputlength - offset);
         for (size_t i = 0; i < blockSize; ++i) {
             enc_out[offset + i] = des_input[offset + i] ^ keystream[i];
@@ -329,18 +314,24 @@ string des_CTRCipher(string key, string message) {
         blockCounter++;
         offset += blockSize;
     }
+    
     auto end_encrypt = high_resolution_clock::now();
     duration<double, micro> encrypt_time = end_encrypt - start_encrypt;
 
-    // Decrypt (same operation)
+    // Decryption (same operation)
     blockCounter = 0;
     offset = 0;
+    
     auto start_decrypt = high_resolution_clock::now();
+    
     while (offset < inputlength) {
+        // Prepare counter
         for (int i = 0; i < 8; ++i) {
             counter[7 - i] = (unsigned char)((blockCounter >> (8 * i)) & 0xFF);
         }
-        DES_ecb_encrypt((DES_cblock *)counter, (DES_cblock *)keystream, &key_schedule, DES_ENCRYPT);
+        // Encrypt counter to get keystream
+        EVP_EncryptUpdate(ctx, keystream, &len, counter, DES_BLOCK_SIZE);
+        
         size_t blockSize = std::min((size_t)DES_BLOCK_SIZE, inputlength - offset);
         for (size_t i = 0; i < blockSize; ++i) {
             dec_out[offset + i] = enc_out[offset + i] ^ keystream[i];
@@ -348,13 +339,15 @@ string des_CTRCipher(string key, string message) {
         blockCounter++;
         offset += blockSize;
     }
+    
     auto end_decrypt = high_resolution_clock::now();
     duration<double, micro> decrypt_time = end_decrypt - start_decrypt;
 
+    // Print results
     printf("Original:\t");
     hex_print(des_input, inputlength);
     printf("Encrypt:\t");
-    hex_print(enc_out, inputlength);
+    hex_print(enc_out, ciphertext_len);
     printf("Decrypt:\t");
     hex_print(dec_out, inputlength);
 
@@ -363,18 +356,22 @@ string des_CTRCipher(string key, string message) {
     double total_time = encrypt_time.count() + decrypt_time.count();
     cout << "Total time: " << (total_time / 1e6) << " seconds" << endl;
 
+    // Verify
     if (memcmp(des_input, dec_out, inputlength) == 0) {
         printf("SUCCESS: Decryption matches original!\n");
     } else {
         printf("ERROR: Decryption failed!\n");
     }
 
+    // Convert to hex string
     stringstream ss;
     ss << hex << setfill('0');
-    for (size_t i = 0; i < inputlength; ++i) {
+    for (int i = 0; i < ciphertext_len; ++i) {
         ss << setw(2) << (int)enc_out[i];
     }
 
+    // Cleanup
+    EVP_CIPHER_CTX_free(ctx);
     delete[] des_input;
     delete[] enc_out;
     delete[] dec_out;
@@ -382,8 +379,9 @@ string des_CTRCipher(string key, string message) {
     return ss.str();
 }
 
-string des3_CTRCipher(string key, string message) {
-    cout << "Using 3DES CTR Mode" << endl;
+string des3_CTRCipher_HighLevel(string key, string message) {
+    cout << "Using 3DES CTR Mode (High-Level EVP API)" << endl;
+    
     size_t key_len_bytes = key.length();
     if (key_len_bytes != 16 && key_len_bytes != 24) {
         cerr << "Error: Invalid key length for 3DES. Must be 16 or 24 bytes, but got " << key_len_bytes << endl;
@@ -397,45 +395,44 @@ string des3_CTRCipher(string key, string message) {
     printf("Input length: %zu bytes\n", inputlength);
     printf("Key length: %zu bytes\n", key_len_bytes);
 
-    // Setup 3DES keys
-    DES_key_schedule ks1, ks2, ks3;
-    DES_cblock key1, key2, key3;
-    
-    memcpy(key1, key.data(), 8);
-    memcpy(key2, key.data() + 8, 8);
-    if (key_len_bytes == 24) {
-        memcpy(key3, key.data() + 16, 8);
-    } else {
-        // For 2-key 3DES (16 bytes), use key1 as key3
-        memcpy(key3, key.data(), 8);
-    }
-    
-    DES_set_key_unchecked(&key1, &ks1);
-    DES_set_key_unchecked(&key2, &ks2);
-    DES_set_key_unchecked(&key3, &ks3);
+    // Zero IV for demonstration
+    unsigned char iv[DES_BLOCK_SIZE];
+    memset(iv, 0x00, DES_BLOCK_SIZE);
 
-    // For demonstration: zero IV/counter, 0X00 is where the nonce is initialized
+    // Buffers for encryption/decryption
+    unsigned char *enc_out = new unsigned char[inputlength + DES_BLOCK_SIZE];
+    unsigned char *dec_out = new unsigned char[inputlength + DES_BLOCK_SIZE];
+    memset(enc_out, 0, inputlength + DES_BLOCK_SIZE);
+    memset(dec_out, 0, inputlength + DES_BLOCK_SIZE);
+
+    // Select 3DES cipher based on key length
+    const EVP_CIPHER *cipher = (key_len_bytes == 24) ? EVP_des_ede3_ecb() : EVP_des_ede_ecb();
+
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    
+    int len;
+    int ciphertext_len = inputlength;
+
+    // Manual CTR implementation using EVP_des_ede3_ecb or EVP_des_ede_ecb
+    EVP_EncryptInit_ex(ctx, cipher, NULL, (unsigned char*)key.data(), NULL);
+    EVP_CIPHER_CTX_set_padding(ctx, 0);
+
     unsigned char counter[DES_BLOCK_SIZE];
     memset(counter, 0x00, DES_BLOCK_SIZE);
     unsigned char keystream[DES_BLOCK_SIZE];
-
-    // Buffers for encryption/decryption
-    unsigned char *enc_out = new unsigned char[inputlength];
-    unsigned char *dec_out = new unsigned char[inputlength];
-    memset(enc_out, 0, inputlength);
-    memset(dec_out, 0, inputlength);
-
-    size_t offset = 0;
     unsigned long long blockCounter = 0;
-    
+    size_t offset = 0;
+
+    // Encryption
     auto start_encrypt = high_resolution_clock::now();
+    
     while (offset < inputlength) {
-        // Prepare counter block (64-bit counter)
+        // Prepare counter
         for (int i = 0; i < 8; ++i) {
             counter[7 - i] = (unsigned char)((blockCounter >> (8 * i)) & 0xFF);
         }
-        // 3DES encryption of counter: Encrypt with k1, Decrypt with k2, Encrypt with k3
-        DES_ecb3_encrypt((DES_cblock *)counter, (DES_cblock *)keystream, &ks1, &ks2, &ks3, DES_ENCRYPT);
+        // Encrypt counter to get keystream
+        EVP_EncryptUpdate(ctx, keystream, &len, counter, DES_BLOCK_SIZE);
         
         size_t blockSize = std::min((size_t)DES_BLOCK_SIZE, inputlength - offset);
         for (size_t i = 0; i < blockSize; ++i) {
@@ -444,18 +441,23 @@ string des3_CTRCipher(string key, string message) {
         blockCounter++;
         offset += blockSize;
     }
+    
     auto end_encrypt = high_resolution_clock::now();
     duration<double, micro> encrypt_time = end_encrypt - start_encrypt;
 
-    // Decrypt (same operation)
+    // Decryption (same operation)
     blockCounter = 0;
     offset = 0;
+    
     auto start_decrypt = high_resolution_clock::now();
+    
     while (offset < inputlength) {
+        // Prepare counter
         for (int i = 0; i < 8; ++i) {
             counter[7 - i] = (unsigned char)((blockCounter >> (8 * i)) & 0xFF);
         }
-        DES_ecb3_encrypt((DES_cblock *)counter, (DES_cblock *)keystream, &ks1, &ks2, &ks3, DES_ENCRYPT);
+        // Encrypt counter to get keystream
+        EVP_EncryptUpdate(ctx, keystream, &len, counter, DES_BLOCK_SIZE);
         
         size_t blockSize = std::min((size_t)DES_BLOCK_SIZE, inputlength - offset);
         for (size_t i = 0; i < blockSize; ++i) {
@@ -464,13 +466,15 @@ string des3_CTRCipher(string key, string message) {
         blockCounter++;
         offset += blockSize;
     }
+    
     auto end_decrypt = high_resolution_clock::now();
     duration<double, micro> decrypt_time = end_decrypt - start_decrypt;
 
+    // Print results
     printf("Original:\t");
     hex_print(des3_input, inputlength);
     printf("Encrypt:\t");
-    hex_print(enc_out, inputlength);
+    hex_print(enc_out, ciphertext_len);
     printf("Decrypt:\t");
     hex_print(dec_out, inputlength);
 
@@ -479,18 +483,22 @@ string des3_CTRCipher(string key, string message) {
     double total_time = encrypt_time.count() + decrypt_time.count();
     cout << "Total time: " << (total_time / 1e6) << " seconds" << endl;
 
+    // Verify
     if (memcmp(des3_input, dec_out, inputlength) == 0) {
         printf("SUCCESS: Decryption matches original!\n");
     } else {
         printf("ERROR: Decryption failed!\n");
     }
 
+    // Convert to hex string
     stringstream ss;
     ss << hex << setfill('0');
-    for (size_t i = 0; i < inputlength; ++i) {
+    for (int i = 0; i < ciphertext_len; ++i) {
         ss << setw(2) << (int)enc_out[i];
     }
 
+    // Cleanup
+    EVP_CIPHER_CTX_free(ctx);
     delete[] des3_input;
     delete[] enc_out;
     delete[] dec_out;
